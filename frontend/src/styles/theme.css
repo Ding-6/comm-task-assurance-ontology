@@ -1,0 +1,88 @@
+/* ============================================================
+   通信任务保障 · 浅色纸面主题
+   - 表面：暖白纸面 + 浅灰 hairline
+   - 状态色严格语义保留：ok 绿 / warn 黄 / backup 橙 / over 红 / down 红
+   - 图标 + 文字 + 颜色三重编码（状态色语义未变，仅颜色明度随浅底调整）
+   ============================================================ */
+
+:root {
+  /* 表面 */
+  --page:    #f6f4ee;            /* 暖白纸 */
+  --bg:      #ffffff;
+  --card:    #ffffff;
+  --card2:   #fbfaf6;
+  --chip:    #f1ede3;            /* chip/标签 */
+  --border:   #e5dfd1;            /* hairline warm */
+  --border-soft: #ede8da;
+
+  /* 文字 */
+  --text:    #1a1f24;
+  --sub:     #586068;
+  --muted:   #8a8f96;
+
+  /* 主色：指挥蓝（保留状态语义不再作他用）*/
+  --accent:    #1d4ed8;
+  --accent-soft: rgba(29,78,216,.10);
+
+  /* 状态色（保留语义） */
+  --ok:      #15803d;
+  --warn:    #a16207;
+  --over:    #b91c1c;
+  --down:    #b91c1c;
+  --backup:  #c2410c;
+  --info:    #1d4ed8;
+
+  /* 状态文字/边框/背景（浅底配深字） */
+  --ok-fg:     #166534;  --ok-bg:     #e7f3ea;     --ok-bd:    #b6dcc1;
+  --warn-fg:   #92400e;  --warn-bg:   #fbf2d8;     --warn-bd:  #e3cf86;
+  --over-fg:   #991b1b;  --over-bg:   #fbe5e5;     --over-bd:  #f5b3b3;
+  --backup-fg: #9a3412;  --backup-bg: #fdebd6;     --backup-bd:#f4c89a;
+  --idle-fg:   var(--sub); --idle-bd:   var(--border);
+
+  /* 字体 */
+  --sans: "Microsoft YaHei", "PingFang SC", -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", Consolas, "Courier New", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body, #app {
+  height: 100%; margin: 0; padding: 0;
+  background: var(--page); color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+#app { display: flex; flex-direction: column; min-height: 100%; }
+
+button { font-family: inherit; cursor: pointer; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 实用类 */
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.tnum { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.sub   { color: var(--sub); }
+
+/* 状态胶囊 */
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; padding: 2px 8px; border-radius: 10px;
+  border: 1px solid; white-space: nowrap;
+}
+.pill.ok     { color: var(--ok-fg);     border-color: var(--ok-bd);     background: var(--ok-bg); }
+.pill.warn   { color: var(--warn-fg);   border-color: var(--warn-bd);   background: var(--warn-bg); }
+.pill.over   { color: var(--over-fg);   border-color: var(--over-bd);   background: var(--over-bg); }
+.pill.down   { color: #fff;             border-color: var(--down);      background: var(--down); }
+.pill.backup { color: var(--backup-fg); border-color: var(--backup-bd); background: var(--backup-bg); }
+.pill.idle   { color: var(--idle-fg);   border-color: var(--idle-bd);   background: transparent; }
+
+/* 滚动条（浅底） */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d8d2c4; border-radius: 5px; border: 2px solid var(--page); }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* 浅入场 */
+@keyframes ds-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.ds-fade { animation: ds-fade-in .3s ease both; }

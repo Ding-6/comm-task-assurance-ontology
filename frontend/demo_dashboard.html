@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>通信任务保障演示台</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+  :root{
+    --bg:#0a1628;
+    --card:#14253d;
+    --border:#1e3a5f;
+    --ok:#22c55e;
+    --warn:#eab308;
+    --over:#ef4444;
+    --text:#e2e8f0;
+    --sub:#94a3b8;
+    --accent:#3b82f6;
+    --chip:#0f1d33;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:"Microsoft YaHei","PingFang SC",-apple-system,Segoe UI,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;overflow:hidden}
+  body{display:flex;flex-direction:column}
+  /* ===== Top bar ===== */
+  header{
+    height:60px;flex:0 0 60px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 20px;background:linear-gradient(180deg,#0e1c34 0%,#0a1628 100%);
+    border-bottom:1px solid var(--border);position:relative;z-index:5;
+  }
+  .brand{display:flex;align-items:baseline;gap:18px}
+  .title{font-size:18px;font-weight:700;letter-spacing:1px;
+    background:linear-gradient(90deg,#7dd3fc 0%,#38bdf8 50%,#22d3ee 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .clock{display:flex;align-items:baseline;gap:10px;font-variant-numeric:tabular-nums}
+  .clock .tag{font-size:11px;color:var(--sub);border:1px solid var(--border);
+    padding:2px 8px;border-radius:10px;background:var(--chip)}
+  .clock .tplus{font-size:18px;font-weight:600;color:#7dd3fc}
+  .clock .real{font-size:22px;font-weight:700;letter-spacing:1px;color:#e2e8f0}
+  .right{display:flex;align-items:center;gap:10px}
+  .btn{background:#0f1d33;color:var(--text);border:1px solid var(--border);
+    padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;transition:.2s}
+  .btn:hover{background:#1a3055;border-color:#3b82f6}
+  .btn.primary{background:#1d4ed8;border-color:#3b82f6;color:#fff}
+  .btn.primary:hover{background:#2563eb}
+  .btn.danger{background:#7f1d1d;border-color:#ef4444;color:#fee2e2}
+  .toast-area{position:absolute;left:50%;bottom:-8px;transform:translate(-50%,100%);
+    display:flex;flex-direction:column;gap:6px;z-index:50;pointer-events:none}
+  .toast{pointer-events:auto;background:#0f1d33;border:1px solid var(--border);
+    padding:8px 14px;border-radius:6px;font-size:13px;color:var(--text);
+    box-shadow:0 4px 20px rgba(0,0,0,.5);animation:slideIn .3s ease}
+  .toast.info{border-left:3px solid var(--accent)}
+  .toast.warn{border-left:3px solid var(--warn)}
+  .toast.err{border-left:3px solid var(--over)}
+  @keyframes slideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  /* ===== Main grid ===== */
+  main{flex:1;display:grid;grid-template-columns:6fr 4fr;gap:14px;padding:14px;min-height:0}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:10px;
+    display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .panel-head{padding:10px 14px;border-bottom:1px solid var(--border);
+    display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--sub);
+    background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)}
+  .panel-head .h{font-size:14px;color:var(--text);font-weight:600;letter-spacing:.5px}
+  .panel-body{padding:12px;flex:1;min-height:0;overflow:auto}
+  .panel-body.no-pad{padding:0}
+  /* ===== Link cards ===== */
+  .links{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;height:100%}
+  .link-card{background:#0f1d33;border:1px solid var(--border);border-radius:8px;
+    display:flex;flex-direction:column;padding:12px;position:relative;min-height:0}
+  .link-card.down{border-color:#7f1d1d;background:#1a0d12}
+  .lc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .lc-name{font-size:14px;font-weight:600;line-height:1.3}
+  .lc-code{font-size:11px;color:var(--sub);font-family:Consolas,monospace;margin-top:2px}
+  .status-led{width:10px;height:10px;border-radius:50%;background:var(--ok);
+    box-shadow:0 0 8px var(--ok);flex-shrink:0;margin-top:4px}
+  .status-led.down{background:var(--over);box-shadow:0 0 8px var(--over);animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .gauge-wrap{flex:1;min-height:0;position:relative}
+  .gauge{width:100%;height:100%;min-height:180px}
+  .gauge-overlay{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+  .chip{font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);
+    color:var(--sub);background:#0a1628;font-family:Consolas,monospace}
+  .chip.ok{color:var(--ok);border-color:#14532d;background:#052e1a}
+  .chip.warn{color:var(--warn);border-color:#713f12;background:#2a1a05}
+  .chip.over{color:var(--over);border-color:#7f1d1d;background:#2a0709}
+  .lc-foot{margin-top:6px;font-size:11px;color:var(--sub);display:flex;justify-content:space-between;align-items:center}
+  .backup{color:#7dd3fc}
+  .down-banner{background:#7f1d1d;color:#fee2e2;padding:4px 8px;border-radius:4px;
+    text-align:center;font-size:11px;margin-top:4px;font-weight:600}
+  /* ===== Right column ===== */
+  .right-col{display:grid;grid-template-rows:1fr 1fr;gap:14px;min-height:0}
+  .task-list{display:flex;flex-direction:column;gap:8px}
+  .task{display:flex;justify-content:space-between;align-items:center;
+    padding:10px 12px;background:#0f1d33;border:1px solid var(--border);border-radius:6px;
+    border-left:3px solid var(--accent)}
+  .task.g0{border-left-color:var(--over)}
+  .task.g1{border-left-color:#f97316}
+  .task.g2{border-left-color:var(--warn)}
+  .task.g3{border-left-color:var(--ok)}
+  .task .t-name{font-size:13px;font-weight:600}
+  .task .t-meta{font-size:11px;color:var(--sub);margin-top:2px}
+  .task .t-stage{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;
+    background:#1e3a5f;color:#cbd5e1;margin-left:6px}
+  .task .t-bw{font-size:14px;font-weight:700;color:#7dd3fc;font-variant-numeric:tabular-nums}
+  .events{font-family:Consolas,monospace;font-size:12px;line-height:1.7}
+  .ev{display:flex;gap:10px;padding:5px 14px;border-bottom:1px solid rgba(30,58,95,.4)}
+  .ev .t{color:var(--sub);flex-shrink:0;width:75px}
+  .ev .lvl{flex-shrink:0;width:50px;font-weight:600}
+  .ev .lvl.info{color:#7dd3fc}
+  .ev .lvl.warn{color:var(--warn)}
+  .ev .lvl.err{color:var(--over)}
+  .ev .lvl.ok{color:var(--ok)}
+  .ev .msg{flex:1;color:var(--text)}
+  /* ===== Bottom input ===== */
+  footer{height:120px;flex:0 0 120px;border-top:1px solid var(--border);
+    background:linear-gradient(0deg,#0e1c34 0%,#0a1628 100%);
+    display:grid;grid-template-columns:auto 1fr;gap:14px;padding:12px 20px}
+  .fbtn-col{display:flex;flex-direction:column;gap:6px}
+  .fbtn{background:#0f1d33;color:var(--text);border:1px solid var(--border);
+    padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;text-align:left;min-width:90px}
+  .fbtn:hover{background:#1a3055;border-color:#3b82f6}
+  .input-col{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .input-row{display:flex;gap:8px;align-items:center}
+  .input-row input{flex:1;background:#0a1628;border:1px solid var(--border);
+    color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;outline:none;
+    font-family:inherit}
+  .input-row input:focus{border-color:#3b82f6}
+  .input-row button{background:#1d4ed8;border:1px solid #3b82f6;color:#fff;
+    padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600}
+  .input-row button:hover{background:#2563eb}
+  .hint{font-size:11px;color:var(--sub);line-height:1.5}
+  .hint b{color:#7dd3fc;font-weight:500}
+  /* ===== Modal ===== */
+  .modal-back{position:fixed;inset:0;background:rgba(2,8,20,.75);
+    backdrop-filter:blur(3px);z-index:100;display:none;align-items:center;justify-content:center}
+  .modal-back.active{display:flex;animation:fadeIn .2s}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  .modal{background:var(--card);border:1px solid var(--border);border-radius:12px;
+    width:780px;max-width:92vw;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.7)}
+  .modal h2{font-size:18px;margin:0 0 4px;display:flex;justify-content:space-between;align-items:center}
+  .modal .sub{font-size:12px;color:var(--sub);margin-bottom:16px}
+  .countdown{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .cd-num{font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;
+    color:var(--warn);min-width:60px;text-align:right}
+  .cd-num.danger{color:var(--over);animation:cdPulse 1s infinite}
+  @keyframes cdPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+  .cd-bar{flex:1;height:8px;background:#0a1628;border-radius:4px;overflow:hidden;border:1px solid var(--border)}
+  .cd-bar-fill{height:100%;background:linear-gradient(90deg,var(--warn),#fbbf24);transition:width 1s linear}
+  .cd-bar-fill.danger{background:linear-gradient(90deg,var(--over),#f87171)}
+  .plans{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .plan{background:#0f1d33;border:1px solid var(--border);border-radius:8px;padding:14px;position:relative}
+  .plan .pname{font-size:14px;font-weight:700;margin-bottom:6px}
+  .plan .pdesc{font-size:12px;color:var(--sub);line-height:1.6;margin-bottom:10px}
+  .plan .pmeta{font-size:11px;color:#7dd3fc;margin-bottom:12px}
+  .plan .conservative{position:absolute;top:-8px;right:10px;background:var(--accent);
+    color:#fff;font-size:10px;padding:2px 8px;border-radius:8px;font-weight:600}
+  .plan-actions{display:flex;gap:6px}
+  .plan-actions .btn{flex:1;text-align:center}
+  .plan-actions .approve{background:#14532d;border-color:var(--ok);color:#bbf7d0}
+  .plan-actions .approve:hover{background:#166534}
+  .plan-actions .reject{background:#3f1d1d;border-color:#7f1d1d;color:#fecaca}
+  .plan-actions .reject:hover{background:#5b1d1d}
+  /* ===== Info card (ACT-01) ===== */
+  .info-card{position:fixed;top:80px;right:20px;width:280px;background:var(--card);
+    border:1px solid var(--border);border-left:3px solid var(--over);border-radius:8px;
+    padding:12px 14px;z-index:80;box-shadow:0 8px 30px rgba(0,0,0,.6);
+    animation:slideRight .3s ease}
+  @keyframes slideRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+  .info-card .ic-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .info-card .ic-title{font-size:13px;font-weight:700;color:var(--over)}
+  .info-card .ic-close{cursor:pointer;color:var(--sub);font-size:18px;line-height:1}
+  .info-card .ic-body{font-size:12px;color:var(--text);line-height:1.5}
+  /* scrollbars */
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:3px}
+  ::-webkit-scrollbar-thumb:hover{background:#2a4d7a}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="title">通信任务保障演示台</div>
+    <div class="clock">
+      <span class="tag">场景时间</span>
+      <span class="tplus" id="tplus">T+00:00</span>
+      <span class="tag">真实时间</span>
+      <span class="real" id="real">--:--:--</span>
+    </div>
+  </div>
+  <div class="right">
+    <button class="btn primary" id="btnStart">▶ 开始</button>
+    <button class="btn" id="btnPause">⏸ 暂停</button>
+    <button class="btn" id="btnReset">↻ 复位</button>
+  </div>
+  <div class="toast-area" id="toastArea"></div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="panel-head">
+      <span class="h">▎链路状态 · CAPACITY MONITOR</span>
+      <span id="linkMeta">3 条链路 · 容量上限 10G</span>
+    </div>
+    <div class="panel-body" style="padding:12px">
+      <div class="links" id="links"></div>
+    </div>
+  </section>
+
+  <section class="right-col">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="h">▎任务列表 · TASKS</span>
+        <span id="taskMeta">3 项任务</span>
+      </div>
+      <div class="panel-body" id="taskList"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="h">▎事件流水 · EVENT LOG</span>
+        <span>最近 10 条</span>
+      </div>
+      <div class="panel-body no-pad" id="eventLog" style="overflow:auto"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="fbtn-col">
+    <button class="fbtn" id="btnAddTask">＋ 添加任务</button>
+    <button class="fbtn" id="btnAddLink">＋ 添加链路</button>
+    <button class="fbtn" id="btnPreset">⚡ 一键演示场景</button>
+  </div>
+  <div class="input-col">
+    <div class="input-row">
+      <input id="cmdInput" type="text" placeholder="输入指令或事故描述，回车提交..." />
+      <button id="cmdSubmit">提交</button>
+    </div>
+    <div class="hint">
+      示例：<b>15分钟后线路1故障</b> · <b>50分钟后直播需求到6G</b> · <b>线路1修好了</b> · <b>修理单预计55分钟完成</b>
+    </div>
+    <div class="hint">支持：添加任务 [名称] / 添加链路 [名称] / 线路N故障 / 线路N恢复 / 修理预计N分钟 / 需求N分钟+N G</div>
+  </div>
+</footer>
+
+<!-- Approval modal -->
+<div class="modal-back" id="modal">
+  <div class="modal">
+    <h2>
+      <span>⚠ 容量超限预警 - 需决策</span>
+      <span style="font-size:12px;color:var(--sub);font-weight:400">需人工审批</span>
+    </h2>
+    <div class="sub">检测到链路占用即将超过容量上限，请选择处置方案（背景时钟继续走）</div>
+    <div class="countdown">
+      <span class="cd-num" id="cdNum">60</span>
+      <div class="cd-bar"><div class="cd-bar-fill" id="cdFill" style="width:100%"></div></div>
+      <span style="font-size:11px;color:var(--sub)">秒后自动执行默认方案</span>
+    </div>
+    <div class="plans" id="plans"></div>
+  </div>
+</div>
+
+<!-- Info card container -->
+<div id="infoCardHost"></div>
+
+<script>
+/* =========================================================
+   Scenario state machine (frontend-only demo)
+   ========================================================= */
+const STATE = {
+  running: false,
+  t0: null,             // wall clock ms when started
+  sceneStartMs: 0,      // accumulated scene time in ms
+  speed: 60,            // 1s real = 60s scene
+  timer: null,
+  sceneT: 0,            // current scene second (T+XX:XX)
+  events: [],
+  infoCardId: 0,
+  countdown: null,
+};
+
+const LINKS = [
+  {id:'L-1H', name:'指挥通信主用电路', cap:10, current:3.0, future:3.0, status:'up', backup:'L-3H', warn:0, repairEta:null, repairStart:null, repairBaseMin:null},
+  {id:'L-2H', name:'应急通信承载电路', cap:10, current:2.5, future:2.5, status:'up', backup:'L-3H', warn:0, repairEta:null, repairStart:null, repairBaseMin:null},
+  {id:'L-3H', name:'机动备份承载电路', cap:10, current:1.2, future:1.2, status:'up', backup:null,    warn:0, repairEta:null, repairStart:null, repairBaseMin:null},
+];
+const TASKS = [
+  {id:'T-A1', name:'首长视频会商',     link:'L-1H', bw:2.0, prio:'G2', stage:'会商中', criticalEnd:null},
+  {id:'T-A2', name:'态势数据回传',     link:'L-2H', bw:1.5, prio:'G3', stage:'运行中', criticalEnd:null},
+  {id:'T-A3', name:'机动节点接入',     link:'L-3H', bw:0.8, prio:'G3', stage:'运行中', criticalEnd:null},
+];
+
+/* ===== utils ===== */
+const $ = id => document.getElementById(id);
+const pad = (n,w=2)=>String(n).padStart(w,'0');
+const fmtT = sec => `T+${pad(Math.floor(sec/60))}:${pad(sec%60)}`;
+const fmtClock = d => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+function logEvent(level, msg){
+  const now = new Date();
+  STATE.events.unshift({t:fmtClock(now), lvl:level, msg});
+  if(STATE.events.length>10) STATE.events.length=10;
+  renderEvents();
+}
+function toast(text, kind='info', ms=3500){
+  const host = $('toastArea');
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.textContent = text;
+  host.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='.3s'; setTimeout(()=>el.remove(),300); }, ms);
+}
+
+/* ===== Render: links & gauges ===== */
+const gaugeCharts = {};
+function renderLinks(){
+  const host = $('links');
+  host.innerHTML = '';
+  LINKS.forEach((lk,i)=>{
+    const down = lk.status==='down';
+    const w = lk.warn||warnStatus(lk);
+    const wLabel = w===2?'超容量':w===1?'超预警线':'正常';
+    const wClass = w===2?'over':w===1?'warn':'ok';
+    const card = document.createElement('div');
+    card.className = 'link-card' + (down?' down':'');
+    card.innerHTML = `
+      <div class="lc-head">
+        <div>
+          <div class="lc-name">${lk.name}</div>
+          <div class="lc-code">${lk.id} · 上限 ${lk.cap}G</div>
+        </div>
+        <div class="status-led ${down?'down':''}" title="${down?'DOWN':'UP'}"></div>
+      </div>
+      <div class="gauge-wrap">
+        <div class="gauge" id="g${i}"></div>
+        <div class="gauge-overlay">
+          <span class="chip ${wClass}">${wLabel}</span>
+          ${lk.backup?`<span class="chip backup">备用 ${lk.backup}</span>`:''}
+          ${lk.repairEta?`<span class="chip warn">预计 ${lk.repairEta}min 修复</span>`:''}
+        </div>
+      </div>
+      <div class="lc-foot">
+        <span>${down?'当前 0.00 / 0.00 G':'当前 '+(lk.current).toFixed(2)+' / 未来 '+(lk.future).toFixed(2)+' G'}</span>
+      </div>
+      ${down?`<div class="down-banner">⚠ 链路中断 · 承载任务已切换</div>`:''}
+    `;
+    host.appendChild(card);
+    initGauge(`g${i}`, lk);
+  });
+}
+function warnStatus(lk){
+  if(lk.future >= lk.cap) return 2;
+  if(lk.future >= 8) return 1;
+  return 0;
+}
+function initGauge(domId, lk){
+  const dom = document.getElementById(domId);
+  const chart = echarts.init(dom);
+  gaugeCharts[domId] = chart;
+  const cap = lk.cap;
+  const cur = lk.status==='down'?0:lk.current;
+  const fut = lk.future;
+  const down = lk.status==='down';
+  const option = {
+    series: [{
+      type:'gauge',
+      min:0, max:cap, startAngle:200, endAngle:-20,
+      radius:'92%',
+      center:['50%','58%'],
+      progress:{show:false},
+      axisLine:{
+        lineStyle:{
+          width:18,
+          color:[
+            [8/cap,  '#22c55e'],
+            [1.0,    '#eab308']
+          ]
+        }
+      },
+      pointer:{
+        length:'55%', width:4,
+        itemStyle:{color: down?'#64748b':'#7dd3fc'}
+      },
+      axisTick:{
+        distance:-22, length:4, lineStyle:{color:'#475569', width:1}
+      },
+      splitLine:{
+        distance:-24, length:8, lineStyle:{color:'#94a3b8', width:1.5}
+      },
+      axisLabel:{
+        distance:-32, color:'#94a3b8', fontSize:9,
+        formatter:v=>v+'G'
+      },
+      anchor:{show:true, size:8, itemStyle:{color:'#7dd3fc'}},
+      title:{show:false},
+      detail:{
+        valueAnimation:true, offsetCenter:[0,'85%'],
+        formatter:()=>{
+          if(down) return '{down|链路中断}';
+          return `{cur|${cur.toFixed(2)} G}  /  {fut|${fut.toFixed(2)} G}`;
+        },
+        rich:{
+          cur:{color:'#7dd3fc',fontSize:13,fontWeight:700,fontFamily:'Consolas'},
+          fut:{color:'#fbbf24',fontSize:13,fontWeight:700,fontFamily:'Consolas'},
+          down:{color:'#ef4444',fontSize:14,fontWeight:700}
+        }
+      },
+      data:[{value: down?0:cur, name:'当前'}]
+    },
+    {
+      type:'gauge',
+      min:0, max:cap, startAngle:200, endAngle:-20,
+      radius:'92%',
+      center:['50%','58%'],
+      progress:{show:false},
+      axisLine:{show:false},
+      axisTick:{show:false},
+      splitLine:{show:false},
+      axisLabel:{show:false},
+      pointer:{
+        length:'70%', width:3,
+        itemStyle:{color: fut>=cap?'#ef4444':(fut>=8?'#eab308':'#fbbf24')}
+      },
+      anchor:{show:false},
+      title:{show:false},
+      detail:{show:false},
+      data:[{value:fut, name:'未来'}]
+    }
+    ]
+  };
+  chart.setOption(option);
+}
+function updateGauges(){
+  LINKS.forEach((lk,i)=>{
+    const c = gaugeCharts[`g${i}`];
+    if(!c) return;
+    const down = lk.status==='down';
+    const cur = down?0:lk.current;
+    const fut = lk.future;
+    c.setOption({
+      series:[
+        {data:[{value:cur}]},
+        {data:[{value:fut}], pointer:{itemStyle:{color: fut>=cap?'#ef4444':(fut>=8?'#eab308':'#fbbf24')}}}
+      ]
+    });
+  });
+}
+
+/* ===== Render: tasks ===== */
+function renderTasks(){
+  const host = $('taskList');
+  host.innerHTML = '';
+  TASKS.forEach(t=>{
+    const el = document.createElement('div');
+    el.className = `task ${t.prio.toLowerCase()}`;
+    el.innerHTML = `
+      <div>
+        <div class="t-name">${t.name}<span class="t-stage">${t.stage}</span></div>
+        <div class="t-meta">${t.id} · 链路 ${t.link} · 优先级 ${t.prio}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="t-bw">${t.bw.toFixed(1)} G</div>
+        <div class="t-meta">当前占用</div>
+      </div>
+    `;
+    host.appendChild(el);
+  });
+  $('taskMeta').textContent = `${TASKS.length} 项任务 · 关键链路 L-1H`;
+}
+
+/* ===== Render: events ===== */
+function renderEvents(){
+  const host = $('eventLog');
+  host.innerHTML = '';
+  STATE.events.forEach(e=>{
+    const el = document.createElement('div');
+    el.className = 'ev';
+    el.innerHTML = `<span class="t">${e.t}</span><span class="lvl ${e.lvl}">[${e.lvl.toUpperCase()}]</span><span class="msg">${e.msg}</span>`;
+    host.appendChild(el);
+  });
+}
+
+/* ===== Capacity recompute ===== */
+function recomputeLink(linkId){
+  const lk = LINKS.find(l=>l.id===linkId);
+  if(!lk || lk.status==='down') return;
+  let cur = 0, fut = 0;
+  TASKS.forEach(t=>{
+    if(t.link === linkId){
+      cur += t.bw;
+      if(!t.criticalEnd || STATE.sceneT < t.criticalEnd) fut += t.bw;
+    }
+  });
+  lk.current = cur;
+  lk.future = fut;
+  lk.warn = warnStatus(lk);
+}
+
+/* ===== Scenario engine ===== */
+const SCENARIO = {
+  events: [],   // {at:sec, fn}
+  armed: false,
+};
+function armScenario(){
+  SCENARIO.events = [];
+  SCENARIO.armed = true;
+}
+function scheduleAt(sec, fn){
+  SCENARIO.events.push({at:sec, fn, done:false});
+  SCENARIO.events.sort((a,b)=>a.at-b.at);
+}
+function tickScenario(){
+  if(!SCENARIO.armed) return;
+  SCENARIO.events.forEach(e=>{
+    if(!e.done && e.at <= STATE.sceneT){
+      e.done = true;
+      try{ e.fn(); }catch(err){ console.error(err); }
+    }
+  });
+}
+function presetScenario(){
+  armScenario();
+  // T+00:00 baseline
+  logEvent('info','场景开始 · 3 条链路在线 · 3 项任务运行');
+  // T+00:30 spike: add live stream task 6G
+  scheduleAt(30, ()=>{
+    addTaskByName('重要直播传输', 6.0, 'L-1H', 'G1', '预热中', 50*60);
+    logEvent('warn','新增任务【重要直播传输】6G 即将到达 L-1H (T+30)');
+    // Open approval modal
+    openApprovalModal('L-1H','future');
+  });
+  // T+00:50 broadcast starts
+  scheduleAt(50, ()=>{
+    const t = TASKS.find(x=>x.name.includes('直播'));
+    if(t){ t.stage='直播中'; t.criticalEnd = (STATE.sceneT+15*60); }
+    logEvent('info','直播任务进入"直播中"阶段 · 关键期开启');
+    renderTasks();
+  });
+  // T+01:00 line 1 fault
+  scheduleAt(60, ()=>{
+    simulateLineFault('L-1H');
+  });
+  // T+01:05 auto repair ticket
+  scheduleAt(65, ()=>{
+    logEvent('warn','故障工单已自动创建 · 预计修复 55min');
+  });
+  // T+01:30 line 1 restored
+  scheduleAt(90, ()=>{
+    simulateLineRestore('L-1H');
+  });
+}
+
+/* ===== Operations ===== */
+function addTaskByName(name, bw, link, prio='G2', stage='预热中', inSec=0){
+  const id = 'T-' + (Math.random().toString(36).slice(2,5)).toUpperCase();
+  TASKS.push({id, name, link, bw, prio, stage, criticalEnd: inSec? STATE.sceneT+inSec : null});
+  recomputeLink(link);
+  renderTasks(); renderLinks(); updateGauges();
+  return id;
+}
+function addLinkByName(name){
+  const id = 'L-' + Math.floor(Math.random()*9+1) + 'H';
+  LINKS.push({id, name, cap:10, current:0, future:0, status:'up', backup:null, warn:0, repairEta:null, repairStart:null, repairBaseMin:null});
+  renderLinks();
+  logEvent('info',`新增链路 ${id} ${name}`);
+}
+function simulateLineFault(linkId){
+  const lk = LINKS.find(l=>l.id===linkId);
+  if(!lk) return;
+  lk.status = 'down';
+  lk.current = 0; lk.future = 0;
+  // Switch tasks
+  const target = lk.backup;
+  let switched = 0;
+  if(target){
+    TASKS.filter(t=>t.link===linkId).forEach(t=>{
+      t.link = target;
+      switched++;
+    });
+    TASKS.forEach(t=>recomputeLink(t.link));
+  }
+  renderLinks(); renderTasks(); updateGauges();
+  logEvent('err', `${linkId} 中断 · ${switched} 项任务已切换至 ${target||'无备用'}`);
+  showInfoCard('链路中断', `${linkId} 中断，任务已自动切换至 ${target||'无备用'}`);
+  toast(`${linkId} 中断，已切至 ${target}`, 'err');
+}
+function simulateLineRestore(linkId){
+  const lk = LINKS.find(l=>l.id===linkId);
+  if(!lk) return;
+  lk.status = 'up';
+  lk.repairEta = null; lk.repairStart = null; lk.repairBaseMin = null;
+  // restore tasks to original link? keep on backup; just mark restored
+  TASKS.forEach(t=>recomputeLink(t.link));
+  renderLinks(); updateGauges();
+  logEvent('ok', `${linkId} 修复完成，链路恢复 · 任务保持当前承载`);
+  toast(`${linkId} 恢复`, 'ok');
+}
+function startRepair(linkId, minutes){
+  const lk = LINKS.find(l=>l.id===linkId);
+  if(!lk) return;
+  lk.repairStart = STATE.sceneT;
+  lk.repairBaseMin = minutes;
+  lk.repairEta = minutes;
+  logEvent('warn', `${linkId} 修理单已开 · 预计 ${minutes}min 完成`);
+  // schedule completion
+  scheduleAt(STATE.sceneT + minutes*60, ()=>{
+    if(lk.status==='down') simulateLineRestore(linkId);
+  });
+  renderLinks();
+}
+
+/* ===== Approval modal ===== */
+function openApprovalModal(linkId, reason='capacity'){
+  const lk = LINKS.find(l=>l.id===linkId);
+  if(!lk) return;
+  const cur = lk.future;
+  const repairOk = false; // can't catch critical phase
+  const plans = [
+    {
+      name:'修复原链路', code:'repair',
+      desc:`等待 ${lk.id} 修复完成后切回。预计修复时间 55 分钟。`,
+      meta: repairOk?'✓ 可赶上关键期':'✗ 无法赶上关键期 (剩余 15min)',
+      conservative:false
+    },
+    {
+      name:'转备用链路', code:'reroute',
+      desc:`立即将占用转移至备用链路 ${lk.backup||'L-3H'}，保守安全。`,
+      meta:'✓ 可立即生效 · 风险可控',
+      conservative:true
+    }
+  ];
+  const host = $('plans');
+  host.innerHTML = '';
+  plans.forEach(p=>{
+    const el = document.createElement('div');
+    el.className = 'plan';
+    el.innerHTML = `
+      ${p.conservative?'<span class="conservative">保守默认</span>':''}
+      <div class="pname">${p.name}</div>
+      <div class="pdesc">${p.desc}</div>
+      <div class="pmeta">${p.meta}</div>
+      <div class="plan-actions">
+        <button class="btn approve" data-act="approve" data-code="${p.code}">✓ 批准</button>
+        <button class="btn reject" data-act="reject" data-code="${p.code}">✗ 拒绝</button>
+      </div>
+    `;
+    host.appendChild(el);
+  });
+  // countdown
+  let remain = 60;
+  const cdNum = $('cdNum'), cdFill = $('cdFill');
+  cdNum.classList.remove('danger');
+  cdFill.classList.remove('danger');
+  cdNum.textContent = remain;
+  cdFill.style.width = '100%';
+  $('modal').classList.add('active');
+  if(STATE.countdown) clearInterval(STATE.countdown);
+  STATE.countdown = setInterval(()=>{
+    remain--;
+    cdNum.textContent = remain;
+    cdFill.style.width = (remain/60*100)+'%';
+    if(remain<=10){
+      cdNum.classList.add('danger');
+      cdFill.classList.add('danger');
+    }
+    if(remain<=0){
+      clearInterval(STATE.countdown);
+      STATE.countdown = null;
+      decidePlan('reroute', 'auto');
+      $('modal').classList.remove('active');
+    }
+  }, 1000);
+  // bind actions
+  host.querySelectorAll('.plan-actions .btn').forEach(b=>{
+    b.onclick = ()=>{
+      const act = b.dataset.act, code = b.dataset.code;
+      if(act==='approve'){ decidePlan(code, 'manual'); }
+      else { decidePlan(code==='repair'?'reroute':'repair', 'manual'); } // reject = take the other
+      if(STATE.countdown){ clearInterval(STATE.countdown); STATE.countdown=null; }
+      $('modal').classList.remove('active');
+    };
+  });
+  // log
+  logEvent('warn', `审批弹窗 · ${linkId} 容量超限(${cur.toFixed(2)}/${lk.cap}G) · 等待决策`);
+}
+function decidePlan(code, source){
+  if(code==='reroute'){
+    logEvent('ok', `决策(${source==='auto'?'自动':'人工'})：转备用链路 · 任务已迁移`);
+    toast('已转备用链路','ok');
+    // simulate: reduce L-1H future by half (assume moved to L-3H)
+    const lk = LINKS.find(l=>l.id==='L-1H');
+    const bak = LINKS.find(l=>l.id===(lk?.backup||'L-3H'));
+    if(lk && bak){
+      const movingTasks = TASKS.filter(t=>t.link===lk.id);
+      movingTasks.forEach(t=>{ t.link = bak.id; });
+      TASKS.forEach(t=>recomputeLink(t.link));
+      renderTasks(); renderLinks(); updateGauges();
+    }
+  } else {
+    logEvent('warn', `决策(${source==='auto'?'自动':'人工'})：修复原链路 · 等待工单完成`);
+    toast('已批准修复原链路','warn');
+    startRepair('L-1H', 55);
+  }
+}
+
+/* ===== Info card ===== */
+function showInfoCard(title, body){
+  const id = ++STATE.infoCardId;
+  const host = $('infoCardHost');
+  const el = document.createElement('div');
+  el.className = 'info-card';
+  el.dataset.id = id;
+  el.innerHTML = `
+    <div class="ic-head">
+      <span class="ic-title">⚡ ${title}</span>
+      <span class="ic-close" onclick="this.closest('.info-card').remove()">×</span>
+    </div>
+    <div class="ic-body">${body}</div>
+  `;
+  host.appendChild(el);
+  // auto dismiss after 8s
+  setTimeout(()=>{ if(el.parentNode) el.remove(); }, 8000);
+}
+
+/* ===== Input parser ===== */
+function parseAndExec(text){
+  const t = text.trim();
+  if(!t) return;
+  logEvent('info', `指令: ${t}`);
+  // 15分钟后线路1故障
+  let m;
+  if((m = t.match(/^(\d+)\s*分钟后?\s*线路\s*(\d+)\s*(?:[HhHh]?)\s*(?:故障|中断|挂了)/))){
+    const mins = +m[1], ln = 'L-'+m[2]+'H';
+    scheduleAt(STATE.sceneT + mins*60, ()=>simulateLineFault(ln));
+    toast(`已排程：T+${mins}min 后 ${ln} 故障`,'warn');
+    return;
+  }
+  // 50分钟后直播需求到6G
+  if((m = t.match(/^(\d+)\s*分钟后?\s*(\S+?)\s*需求?\s*(?:到|至|加)?\s*(\d+(?:\.\d+)?)\s*G/i))){
+    const mins = +m[1], name = m[2], bw = +m[3];
+    scheduleAt(STATE.sceneT + mins*60, ()=>{
+      addTaskByName(name, bw, 'L-1H', 'G1', '预热中', 15*60);
+      logEvent('warn',`新增任务【${name}】${bw}G 至 L-1H`);
+      openApprovalModal('L-1H','future');
+    });
+    toast(`已排程：T+${mins}min 后【${name}】${bw}G`,'warn');
+    return;
+  }
+  // 修理单预计55分钟完成
+  if((m = t.match(/修理[单工]?.*?(\d+)\s*分/))){
+    startRepair('L-1H', +m[1]);
+    toast(`修理单已开 · ${m[1]}min`,'warn');
+    return;
+  }
+  // 线路1修好了 / 恢复
+  if((m = t.match(/线路\s*(\d+)\s*[Hh]?\s*(?:修好|恢复|好了)/))){
+    const ln = 'L-'+m[1]+'H';
+    scheduleAt(STATE.sceneT, ()=>simulateLineRestore(ln));
+    return;
+  }
+  // 线路N故障
+  if((m = t.match(/线路\s*(\d+)\s*[Hh]?\s*(?:故障|中断|挂了)/))){
+    simulateLineFault('L-'+m[1]+'H');
+    return;
+  }
+  // 添加任务
+  if((m = t.match(/^添加任务\s*(.+)$/))){
+    addTaskByName(m[1], 1.0, 'L-2H','G3','运行中');
+    toast('任务已添加','ok');
+    return;
+  }
+  // 添加链路
+  if((m = t.match(/^添加链路\s*(.+)$/))){
+    addLinkByName(m[1]);
+    toast('链路已添加','ok');
+    return;
+  }
+  // 需求+NG
+  if((m = t.match(/(?:需求|占用).*?(\d+(?:\.\d+)?)\s*G/i))){
+    addTaskByName('新业务需求', +m[1], 'L-1H', 'G1', '预热中', 15*60);
+    openApprovalModal('L-1H','future');
+    return;
+  }
+  toast('未识别指令 · 请参考示例','warn');
+}
+
+/* ===== Clock & loop ===== */
+function startClock(){
+  if(STATE.running) return;
+  STATE.running = true;
+  if(!STATE.t0) STATE.t0 = Date.now() - STATE.sceneStartMs;
+  STATE.timer = setInterval(()=>{
+    const dt = Date.now() - STATE.t0;
+    STATE.sceneStartMs = dt;
+    STATE.sceneT = Math.floor(dt/1000 * (STATE.speed/60));
+    // note: STATE.speed=60 means 1s real = 60s scene => sceneT = dt*60/1000
+    STATE.sceneT = Math.floor(dt*STATE.speed/60000);
+    $('tplus').textContent = fmtT(STATE.sceneT);
+    $('real').textContent  = fmtClock(new Date());
+    tickScenario();
+  }, 200);
+}
+function pauseClock(){
+  STATE.running = false;
+  if(STATE.timer){ clearInterval(STATE.timer); STATE.timer=null; }
+}
+function resetClock(){
+  pauseClock();
+  STATE.sceneT = 0; STATE.sceneStartMs = 0; STATE.t0 = null;
+  STATE.events = [];
+  SCENARIO.armed = false; SCENARIO.events = [];
+  // reset links & tasks
+  LINKS.forEach(l=>{ l.status='up'; l.current=[3.0,2.5,1.2][LINKS.indexOf(l)]; l.future=l.current; l.repairEta=null; });
+  TASKS.forEach(t=>{ t.stage = t.id==='T-A1'?'会商中':'运行中'; });
+  // restore original link assignments
+  const map = {'T-A1':'L-1H','T-A2':'L-2H','T-A3':'L-3H'};
+  TASKS.forEach(t=>{ t.link = map[t.id] || t.link; });
+  TASKS.forEach(t=>recomputeLink(t.link));
+  renderLinks(); renderTasks(); renderEvents(); updateGauges();
+  $('tplus').textContent = 'T+00:00';
+  toast('已复位','info');
+}
+
+/* ===== Wire up ===== */
+$('btnStart').onclick = ()=>{ startClock(); if(!SCENARIO.armed) presetScenario(); };
+$('btnPause').onclick = pauseClock;
+$('btnReset').onclick = resetClock;
+$('btnPreset').onclick = ()=>{ resetClock(); presetScenario(); startClock(); };
+$('btnAddTask').onclick = ()=>{ addTaskByName('新增任务', 1.0, 'L-2H','G3','运行中'); };
+$('btnAddLink').onclick = ()=>{ addLinkByName('新建链路'); };
+$('cmdSubmit').onclick = ()=>{
+  const v = $('cmdInput').value;
+  parseAndExec(v);
+  $('cmdInput').value = '';
+};
+$('cmdInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('cmdSubmit').click(); });
+
+/* ===== Init ===== */
+function init(){
+  renderLinks(); renderTasks(); renderEvents();
+  $('real').textContent = fmtClock(new Date());
+  setInterval(()=>{ if(!STATE.running) $('real').textContent = fmtClock(new Date()); }, 1000);
+  logEvent('info','演示台就绪 · 点击「开始」或「一键演示场景」启动');
+  // Initial start
+  startClock();
+  presetScenario();
+}
+init();
+</script>
+</body>
+</html>

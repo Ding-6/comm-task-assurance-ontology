@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>通信任务保障演示台</title>
+    <style>
+      /* 兜底防黑屏：main.js 加载/执行失败时也能看到文字，避免出现「一片黑」 */
+      html, body, #app {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background: #f6f4ee;
+        color: #1a1f24;
+        font-family: "Microsoft YaHei", "PingFang SC", -apple-system, "Segoe UI", sans-serif;
+      }
+      #app { display: flex; flex-direction: column; min-height: 100%; }
+      /* JS 报错时显示红条，避免黑屏误导 */
+      .boot-error {
+        margin: 16px;
+        padding: 12px 16px;
+        background: #fbe5e5;
+        border: 1px solid #f5b3b3;
+        border-radius: 6px;
+        color: #991b1b;
+        font-family: Consolas, monospace;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- Vue 挂载前的占位：main.js 成功 mount 后会被替换 -->
+      <noscript>本演示需要启用 JavaScript。请在浏览器中开启 JS 后刷新。</noscript>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,389 @@
+<?xml version="1.0"?>
+<rdf:RDF xmlns="http://example.com/comm-ontology#"
+     xml:base="http://example.com/comm-ontology"
+     xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+     xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+     xmlns:owl="http://www.w3.org/2002/07/owl#"
+     xmlns:xsd="http://www.w3.org/2001/XMLSchema#">
+
+    <!-- ===== 本体元信息 ===== -->
+    <owl:Ontology rdf:about="http://example.com/comm-ontology">
+        <rdfs:label>通信任务保障本体 V4.1</rdfs:label>
+        <rdfs:comment>智元本体智能体平台部署版 · 三任务三链路 · 事件驱动闭环</rdfs:comment>
+        <owl:versionInfo>4.1.0</owl:versionInfo>
+        <dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/">通信任务保障项目组</dc:creator>
+    </owl:Ontology>
+
+    <!-- ============================================================
+         一、对象类型（8 + 1 个类）
+         ============================================================ -->
+
+    <!-- 1. CommTask 通信任务 -->
+    <owl:Class rdf:about="#CommTask">
+        <rdfs:label>通信任务</rdfs:label>
+        <rdfs:comment>保障窗口内运行的通信业务任务</rdfs:comment>
+    </owl:Class>
+
+    <!-- 2. CommLink 通信链路 -->
+    <owl:Class rdf:about="#CommLink">
+        <rdfs:label>通信链路</rdfs:label>
+        <rdfs:comment>承载任务流量的传输电路</rdfs:comment>
+    </owl:Class>
+
+    <!-- 3. TrafficDemand 流量需求 -->
+    <owl:Class rdf:about="#TrafficDemand">
+        <rdfs:label>流量需求</rdfs:label>
+        <rdfs:comment>任务在不同时间段的带宽需求</rdfs:comment>
+    </owl:Class>
+
+    <!-- 4. ResourceAlarm 资源告警 -->
+    <owl:Class rdf:about="#ResourceAlarm">
+        <rdfs:label>资源告警</rdfs:label>
+        <rdfs:comment>链路故障、性能劣化、容量超限告警</rdfs:comment>
+    </owl:Class>
+
+    <!-- 5. CommPlan 处置方案 -->
+    <owl:Class rdf:about="#CommPlan">
+        <rdfs:label>处置方案</rdfs:label>
+        <rdfs:comment>针对告警生成的修复/转备用方案</rdfs:comment>
+    </owl:Class>
+
+    <!-- 6. ApprovalRecord 审批记录 -->
+    <owl:Class rdf:about="#ApprovalRecord">
+        <rdfs:label>审批记录</rdfs:label>
+        <rdfs:comment>人工或超时自动的审批决策记录</rdfs:comment>
+    </owl:Class>
+
+    <!-- 7. RepairOrder 修理单 -->
+    <owl:Class rdf:about="#RepairOrder">
+        <rdfs:label>修理单</rdfs:label>
+        <rdfs:comment>链路故障后的维修工单</rdfs:comment>
+    </owl:Class>
+
+    <!-- 8. SceneEvent 场景事件 -->
+    <owl:Class rdf:about="#SceneEvent">
+        <rdfs:label>场景事件</rdfs:label>
+        <rdfs:comment>事件驱动闭环的流水记录</rdfs:comment>
+    </owl:Class>
+
+    <!-- 9. TaskLinkBinding 任务链路归属（关系实例对象化） -->
+    <owl:Class rdf:about="#TaskLinkBinding">
+        <rdfs:label>任务链路归属</rdfs:label>
+        <rdfs:comment>任务在某时刻归属某链路的历史记录（联合主键 task_code + assigned_min）</rdfs:comment>
+    </owl:Class>
+
+    <!-- ============================================================
+         二、对象属性（8 种关系类型）
+         ============================================================ -->
+
+    <!-- 1. task_uses_link 任务占用链路 -->
+    <owl:ObjectProperty rdf:about="#task_uses_link">
+        <rdfs:label>任务占用链路</rdfs:label>
+        <rdfs:domain rdf:resource="#CommTask"/>
+        <rdfs:range rdf:resource="#CommLink"/>
+        <rdfs:comment>N:M 关系，实例存于 comm_task_link 表，保留历史</rdfs:comment>
+    </owl:ObjectProperty>
+
+    <!-- 2. alarm_on_link 告警发生于链路 -->
+    <owl:ObjectProperty rdf:about="#alarm_on_link">
+        <rdfs:label>告警发生于链路</rdfs:label>
+        <rdfs:domain rdf:resource="#ResourceAlarm"/>
+        <rdfs:range rdf:resource="#CommLink"/>
+        <rdfs:comment>N:1，link_code 直接外键关联</rdfs:comment>
+    </owl:ObjectProperty>
+
+    <!-- 3. demand_of_task 需求关联任务 -->
+    <owl:ObjectProperty rdf:about="#demand_of_task">
+        <rdfs:label>需求关联任务</rdfs:label>
+        <rdfs:domain rdf:resource="#TrafficDemand"/>
+        <rdfs:range rdf:resource="#CommTask"/>
+        <rdfs:comment>N:1，task_code 直接外键关联</rdfs:comment>
+    </owl:ObjectProperty>
+
+    <!-- 4. link_backup_of 链路互为备用 -->
+    <owl:ObjectProperty rdf:about="#link_backup_of">
+        <rdfs:label>链路互为备用</rdfs:label>
+        <rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="#CommLink"/>
+        <rdfs:comment>N:1，自关联，实例存于 comm_link.backup_link_code</rdfs:comment>
+    </owl:ObjectProperty>
+
+    <!-- 5. approval_on_plan 审批针对方案 -->
+    <owl:ObjectProperty rdf:about="#approval_on_plan">
+        <rdfs:label>审批针对方案</rdfs:label>
+        <rdfs:domain rdf:resource="#ApprovalRecord"/>
+        <rdfs:range rdf:resource="#CommPlan"/>
+        <rdfs:comment>N:1</rdfs:comment>
+    </owl:ObjectProperty>
+
+    <!-- 6. plan_for_alarm 方案处置告警 -->
+    <owl:ObjectProperty rdf:about="#plan_for_alarm">
+        <rdfs:label>方案处置告警</rdfs:label>
+        <rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="#ResourceAlarm"/>
+        <rdfs:comment>N:1</rdfs:comment>
+    </owl:ObjectProperty>
+
+    <!-- 7. repair_for_link 修理单针对链路 -->
+    <owl:ObjectProperty rdf:about="#repair_for_link">
+        <rdfs:label>修理单针对链路</rdfs:label>
+        <rdfs:domain rdf:resource="#RepairOrder"/>
+        <rdfs:range rdf:resource="#CommLink"/>
+        <rdfs:comment>N:1</rdfs:comment>
+    </owl:ObjectProperty>
+
+    <!-- 8. event_refs_object 事件引用对象（多态） -->
+    <owl:ObjectProperty rdf:about="#event_refs_object">
+        <rdfs:label>事件引用对象</rdfs:label>
+        <rdfs:domain rdf:resource="#SceneEvent"/>
+        <rdfs:range rdf:resource="#owl:Thing"/>
+        <rdfs:comment>N:1 多态关联，通过 ref_type + ref_code 关联任意对象</rdfs:comment>
+    </owl:ObjectProperty>
+
+    <!-- ============================================================
+         三、数据属性（各对象的字段）
+         ============================================================ -->
+
+    <!-- ===== CommTask 数据属性 ===== -->
+    <owl:DatatypeProperty rdf:about="#task_code">
+        <rdfs:label>任务编码</rdfs:label><rdfs:domain rdf:resource="#CommTask"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#task_name">
+        <rdfs:label>任务名称</rdfs:label><rdfs:domain rdf:resource="#CommTask"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#duration_min">
+        <rdfs:label>持续分钟数</rdfs:label><rdfs:domain rdf:resource="#CommTask"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#critical_min">
+        <rdfs:label>关键阶段分钟</rdfs:label><rdfs:domain rdf:resource="#CommTask"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#owner_role">
+        <rdfs:label>责任角色</rdfs:label><rdfs:domain rdf:resource="#CommTask"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#current_link_code">
+        <rdfs:label>当前承载链路编码</rdfs:label><rdfs:domain rdf:resource="#CommTask"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#initial_demand_gbps">
+        <rdfs:label>初始需求G</rdfs:label><rdfs:domain rdf:resource="#CommTask"/>
+        <rdfs:range rdf:resource="xsd:decimal"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#lookahead_min">
+        <rdfs:label>前瞻窗口分钟</rdfs:label><rdfs:domain rdf:resource="#CommTask"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+
+    <!-- ===== CommLink 数据属性 ===== -->
+    <owl:DatatypeProperty rdf:about="#link_code">
+        <rdfs:label>链路编码</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#link_name">
+        <rdfs:label>链路名称</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#capacity_gbps">
+        <rdfs:label>可用容量G</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:decimal"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#warning_gbps">
+        <rdfs:label>预警线G</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:decimal"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#oper_state">
+        <rdfs:label>运行状态</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#avg_repair_min">
+        <rdfs:label>平均修复分钟</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#backup_link_code">
+        <rdfs:label>备用链路编码</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#current_load_gbps">
+        <rdfs:label>当前占用G</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:decimal"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#future_load_gbps">
+        <rdfs:label>未来占用G</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:decimal"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#warn_status">
+        <rdfs:label>预警状态</rdfs:label><rdfs:domain rdf:resource="#CommLink"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+
+    <!-- ===== TrafficDemand 数据属性 ===== -->
+    <owl:DatatypeProperty rdf:about="#demand_code">
+        <rdfs:label>需求编码</rdfs:label><rdfs:domain rdf:resource="#TrafficDemand"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#valid_from_min">
+        <rdfs:label>生效分钟</rdfs:label><rdfs:domain rdf:resource="#TrafficDemand"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#demand_gbps">
+        <rdfs:label>需求值G</rdfs:label><rdfs:domain rdf:resource="#TrafficDemand"/>
+        <rdfs:range rdf:resource="xsd:decimal"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#valid_to_min">
+        <rdfs:label>结束分钟</rdfs:label><rdfs:domain rdf:resource="#TrafficDemand"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+
+    <!-- ===== ResourceAlarm 数据属性 ===== -->
+    <owl:DatatypeProperty rdf:about="#alarm_code">
+        <rdfs:label>告警编码</rdfs:label><rdfs:domain rdf:resource="#ResourceAlarm"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#alarm_type">
+        <rdfs:label>告警类型</rdfs:label><rdfs:domain rdf:resource="#ResourceAlarm"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#native_severity">
+        <rdfs:label>原始严重度</rdfs:label><rdfs:domain rdf:resource="#ResourceAlarm"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#event_min">
+        <rdfs:label>发生分钟</rdfs:label><rdfs:domain rdf:resource="#ResourceAlarm"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#predicted_min">
+        <rdfs:label>预测超限分钟</rdfs:label><rdfs:domain rdf:resource="#ResourceAlarm"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+
+    <!-- ===== CommPlan 数据属性 ===== -->
+    <owl:DatatypeProperty rdf:about="#plan_code">
+        <rdfs:label>方案编码</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#plan_type">
+        <rdfs:label>方案类型</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#target_link_code">
+        <rdfs:label>目标链路编码</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#est_repair_min">
+        <rdfs:label>预计修复分钟</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#predicted_load_after_gbps">
+        <rdfs:label>处置后预测占用G</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:decimal"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#can_meet_critical">
+        <rdfs:label>能否赶上关键期</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#plan_status">
+        <rdfs:label>方案状态</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#is_default">
+        <rdfs:label>是否保守默认</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#recommendation">
+        <rdfs:label>推荐说明</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#generated_min">
+        <rdfs:label>生成分钟</rdfs:label><rdfs:domain rdf:resource="#CommPlan"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+
+    <!-- ===== ApprovalRecord 数据属性 ===== -->
+    <owl:DatatypeProperty rdf:about="#approval_code">
+        <rdfs:label>审批单号</rdfs:label><rdfs:domain rdf:resource="#ApprovalRecord"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#decision">
+        <rdfs:label>审批决定</rdfs:label><rdfs:domain rdf:resource="#ApprovalRecord"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#approval_reason">
+        <rdfs:label>审批理由</rdfs:label><rdfs:domain rdf:resource="#ApprovalRecord"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#approver">
+        <rdfs:label>审批人</rdfs:label><rdfs:domain rdf:resource="#ApprovalRecord"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#decision_source">
+        <rdfs:label>决定来源</rdfs:label><rdfs:domain rdf:resource="#ApprovalRecord"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#decided_min">
+        <rdfs:label>审批分钟</rdfs:label><rdfs:domain rdf:resource="#ApprovalRecord"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+
+    <!-- ===== RepairOrder 数据属性 ===== -->
+    <owl:DatatypeProperty rdf:about="#order_code">
+        <rdfs:label>修理单号</rdfs:label><rdfs:domain rdf:resource="#RepairOrder"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#request_min">
+        <rdfs:label>申请分钟</rdfs:label><rdfs:domain rdf:resource="#RepairOrder"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#est_finish_min">
+        <rdfs:label>预计完成分钟</rdfs:label><rdfs:domain rdf:resource="#RepairOrder"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#actual_finish_min">
+        <rdfs:label>实际完成分钟</rdfs:label><rdfs:domain rdf:resource="#RepairOrder"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#repair_status">
+        <rdfs:label>修理状态</rdfs:label><rdfs:domain rdf:resource="#RepairOrder"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+
+    <!-- ===== SceneEvent 数据属性 ===== -->
+    <owl:DatatypeProperty rdf:about="#event_code">
+        <rdfs:label>事件编码</rdfs:label><rdfs:domain rdf:resource="#SceneEvent"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#event_type">
+        <rdfs:label>事件类型</rdfs:label><rdfs:domain rdf:resource="#SceneEvent"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#ref_type">
+        <rdfs:label>引用对象类型</rdfs:label><rdfs:domain rdf:resource="#SceneEvent"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#ref_code">
+        <rdfs:label>引用对象编码</rdfs:label><rdfs:domain rdf:resource="#SceneEvent"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#occur_min">
+        <rdfs:label>发生分钟</rdfs:label><rdfs:domain rdf:resource="#SceneEvent"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#summary">
+        <rdfs:label>事件摘要</rdfs:label><rdfs:domain rdf:resource="#SceneEvent"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+
+    <!-- ===== TaskLinkBinding 数据属性 ===== -->
+    <owl:DatatypeProperty rdf:about="#assigned_min">
+        <rdfs:label>归属生效分钟</rdfs:label><rdfs:domain rdf:resource="#TaskLinkBinding"/>
+        <rdfs:range rdf:resource="xsd:integer"/>
+    </owl:DatatypeProperty>
+    <owl:DatatypeProperty rdf:about="#note">
+        <rdfs:label>归属说明</rdfs:label><rdfs:domain rdf:resource="#TaskLinkBinding"/>
+        <rdfs:range rdf:resource="xsd:string"/>
+    </owl:DatatypeProperty>
+
+</rdf:RDF>

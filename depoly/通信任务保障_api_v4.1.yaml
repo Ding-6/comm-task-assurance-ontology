@@ -1,0 +1,695 @@
+openapi: 3.0.3
+info:
+  title: 通信任务保障后端 API
+  description: |
+    智元本体智能体平台 · 通信任务保障场景能力接口定义。
+    
+    版本：V4.1
+    对应本体：通信任务保障本体_v4.1.owl
+    后端服务：FastAPI @ http://localhost:8000
+    
+    统一响应包：`{code: 0, message: "ok", data: ...}`，code 非 0 为错误。
+  version: "4.1.0"
+servers:
+  - url: http://localhost:8000
+    description: 本地开发环境
+  - url: http://172.17.6.242:8000
+    description: 部署环境
+
+tags:
+  - name: 业务能力
+    description: SK-01 ~ SK-10，供智元平台能力注册中心直连
+  - name: 查询接口
+    description: 场景快照、审批记录、事件流水查询
+  - name: 引擎接口
+    description: 演示控制台用，控制场景时钟与输入
+  - name: 新增接口
+    description: 基于前端设计稿补充的接口
+
+paths:
+  # ==================== 业务能力 SK-01 ~ SK-10 ====================
+  /api/comm/switch:
+    post:
+      tags: [业务能力]
+      summary: SK-01 ACT-01 识别资源异常并自动切换
+      description: 链路故障时自动将任务迁移至共享链路，并发起修理请求
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alarm_link_code]
+              properties:
+                alarm_link_code: {type: string, example: L-1H}
+                moved_task_code: {type: string, description: 留空则自动迁移全部任务}
+                as_of_min: {type: integer, description: 场景分钟，留空取当前}
+      responses:
+        '200':
+          description: 切换成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          switched_tasks: {type: array, items: {type: string}}
+                          repair_order_code: {type: string, example: RP-L-1H-01}
+
+  /api/comm/occupancy:
+    post:
+      tags: [业务能力]
+      summary: SK-02 ACT-02 计算链路占用并前瞻预警
+      description: 计算当前占用、未来占用、前瞻窗口预测，判定正常/超预警线/超容量
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [link_code]
+              properties:
+                link_code: {type: string, example: L-2H}
+                as_of_min: {type: integer}
+      responses:
+        '200':
+          description: 占用计算结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          link_code: {type: string}
+                          current_load_gbps: {type: number, example: 9.00}
+                          future_load_gbps: {type: number, example: 11.00}
+                          predicted_load_max_gbps: {type: number, example: 11.00}
+                          predicted_min: {type: integer, example: 50}
+                          warn_status: {type: string, enum: [正常, 超预警线, 超容量]}
+
+  /api/comm/plan:
+    post:
+      tags: [业务能力]
+      summary: SK-03 ACT-03 生成处置方案
+      description: 针对容量超限告警生成 REPAIR / REROUTE 两个方案，REROUTE 标记为保守默认
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [alarm_link_code]
+              properties:
+                alarm_link_code: {type: string, example: L-2H}
+                as_of_min: {type: integer}
+      responses:
+        '200':
+          description: 方案生成结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          alarm_code: {type: string, example: AL-02}
+                          link_code: {type: string}
+                          predicted_min: {type: integer, example: 50}
+                          predicted_load: {type: number, example: 11.00}
+                          capacity: {type: number, example: 10.00}
+                          remain_min: {type: integer, example: 30}
+                          fresh_message: {type: string, nullable: true}
+                          plans:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                plan_code: {type: string, example: PLAN-L-1H-REROUTE}
+                                plan_type: {type: string, enum: [repair, reroute]}
+                                is_default: {type: string, enum: [是, 否]}
+                                can_meet_critical: {type: string, enum: [是, 否]}
+                                predicted_load_after_gbps: {type: number}
+                                status: {type: string}
+                                recommendation: {type: string}
+                                target_link_code: {type: string}
+                                est_repair_min: {type: integer}
+
+  /api/comm/approve:
+    post:
+      tags: [业务能力]
+      summary: SK-04 ACT-04 人工审批决策
+      description: 批准或拒绝方案，超时自动执行保守默认方案
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_code, decision]
+              properties:
+                plan_code: {type: string, example: PLAN-L-1H-REROUTE}
+                decision: {type: string, enum: [批准, 拒绝]}
+                reason: {type: string}
+                approver: {type: string, example: ROLE-APPROVER}
+                decision_source: {type: string, enum: [人工, 超时自动]}
+      responses:
+        '200':
+          description: 审批结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          approval_code: {type: string}
+                          status: {type: string}
+                          executed: {type: boolean}
+
+  /api/comm/repair:
+    post:
+      tags: [业务能力]
+      summary: SK-05 ACT-05 修理单回执登记
+      description: 登记修理预计完成时间或实际完成时间，评估方案可行性
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_code]
+              properties:
+                order_code: {type: string, example: RP-L-1H-01}
+                est_finish_min: {type: integer, example: 55}
+                actual_finish_min: {type: integer, example: 55}
+                as_of_min: {type: integer}
+      responses:
+        '200':
+          description: 回执处理结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          order_code: {type: string}
+                          status: {type: string}
+                          plans_updated: {type: array}
+
+  /api/comm/alarm:
+    post:
+      tags: [业务能力]
+      summary: SK-06 事故注入（输入框·事故类）
+      description: 手动注入链路故障或性能劣化告警
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [link_code, alarm_type, native_severity]
+              properties:
+                link_code: {type: string, example: L-1H}
+                alarm_type: {type: string, enum: [link_down, 性能劣化]}
+                native_severity: {type: string, enum: [critical, major, minor, warning]}
+                event_min: {type: integer}
+      responses:
+        '200':
+          description: 告警注入结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          alarm_code: {type: string, example: AL-01}
+                          triggered_action: {type: string, example: ACT-01}
+
+  /api/comm/restore:
+    post:
+      tags: [业务能力]
+      summary: SK-07 ACT-06 链路恢复与任务回迁
+      description: 链路修复后自动将任务迁回原链路，释放备用资源
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [link_code]
+              properties:
+                link_code: {type: string, example: L-1H}
+                as_of_min: {type: integer}
+      responses:
+        '200':
+          description: 回迁结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          restored_tasks: {type: array, items: {type: string}}
+                          released_link_code: {type: string}
+
+  /api/comm/task:
+    post:
+      tags: [业务能力]
+      summary: SK-08 添加任务（输入框·任务类）
+      description: 登记新任务，自动生成首条需求记录与归属行
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_code, task_name, duration_min, link_code, demand_gbps]
+              properties:
+                task_code: {type: string, example: T-D}
+                task_name: {type: string, example: 临时会商保障}
+                duration_min: {type: integer, example: 120}
+                critical_min: {type: integer, nullable: true}
+                link_code: {type: string, example: L-2H}
+                demand_gbps: {type: number, example: 5.00}
+                owner_role: {type: string}
+      responses:
+        '200':
+          description: 任务登记结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          task_code: {type: string}
+                          demand_code: {type: string}
+                          triggered_action: {type: string, example: ACT-02}
+
+  /api/comm/link:
+    post:
+      tags: [业务能力]
+      summary: SK-09 添加链路（输入框·链路类）
+      description: 登记新链路，以0占用进入资源池
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [link_code, link_name, capacity_gbps, warning_gbps, oper_state]
+              properties:
+                link_code: {type: string, example: L-4H}
+                link_name: {type: string, example: 应急扩容电路}
+                capacity_gbps: {type: number, example: 10.00}
+                warning_gbps: {type: number, example: 8.00}
+                oper_state: {type: string, enum: [up, down]}
+                avg_repair_min: {type: integer}
+                backup_link_code: {type: string}
+      responses:
+        '200':
+          description: 链路登记结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          link_code: {type: string}
+                          triggered_action: {type: string, example: ACT-02}
+
+  /api/comm/demand:
+    post:
+      tags: [业务能力]
+      summary: SK-10 需求变更登记（输入框·提示类）
+      description: 登记任务在未来某时刻的新需求值
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_code, valid_from_min, demand_gbps]
+              properties:
+                task_code: {type: string, example: T-B}
+                valid_from_min: {type: integer, example: 50}
+                demand_gbps: {type: number, example: 6.00}
+      responses:
+        '200':
+          description: 需求登记结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          demand_code: {type: string}
+                          triggered_action: {type: string, example: ACT-02}
+
+  # ==================== 查询接口 ====================
+  /api/comm/snapshot:
+    get:
+      tags: [查询接口]
+      summary: 场景快照
+      parameters:
+        - name: as_of_min
+          in: query
+          schema: {type: integer}
+      responses:
+        '200':
+          description: 全量快照
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+  /api/comm/approvals:
+    get:
+      tags: [查询接口]
+      summary: 审批记录查询
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, default: 20}
+      responses:
+        '200':
+          description: 审批列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+  /api/comm/events:
+    get:
+      tags: [查询接口]
+      summary: 事件流水查询
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+        - name: event_type
+          in: query
+          schema: {type: string}
+      responses:
+        '200':
+          description: 事件列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+  /api/comm/reset:
+    post:
+      tags: [查询接口]
+      summary: 场景复位
+      description: 恢复默认三任务三链路+两条预置预订事件
+      responses:
+        '200':
+          description: 复位完成
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+  # ==================== 引擎接口 ====================
+  /api/scene/state:
+    get:
+      tags: [引擎接口]
+      summary: 状态快照
+      description: 返回完整场景状态（含链路、任务、方案、待审批、事件、预订队列）
+      responses:
+        '200':
+          description: 完整状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          running: {type: boolean}
+                          now_min: {type: integer, example: 15}
+                          wallclock: {type: string, example: "09:15:30"}
+                          links: {type: array}
+                          tasks: {type: array}
+                          plans: {type: array}
+                          pending_approvals: {type: array}
+                          booked_events: {type: array}
+                          events: {type: array}
+
+  /api/scene/start:
+    post:
+      tags: [引擎接口]
+      summary: 启动场景
+      description: 记录启动真实时刻为锚点，场景时钟置 T+0，开始 1:1 实时推演
+      responses:
+        '200':
+          description: 启动成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+  /api/scene/pause:
+    post:
+      tags: [引擎接口]
+      summary: 暂停
+      description: 暂停引擎 tick 扫描（不影响业务时钟）
+      responses:
+        '200':
+          description: 已暂停
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+  /api/scene/resume:
+    post:
+      tags: [引擎接口]
+      summary: 恢复
+      responses:
+        '200':
+          description: 已恢复
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+  /api/scene/decide:
+    post:
+      tags: [引擎接口]
+      summary: 审批决定
+      description: 同 SK-04，引擎层入口
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan_code, decision]
+              properties:
+                plan_code: {type: string}
+                decision: {type: string, enum: [批准, 拒绝]}
+                reason: {type: string}
+                approver: {type: string}
+                decision_source: {type: string, enum: [人工, 超时自动]}
+      responses:
+        '200':
+          description: 决策完成
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+  /api/scene/input:
+    post:
+      tags: [引擎接口]
+      summary: 输入框统一入口
+      description: task/link 直接转调 SK-08/SK-09；alarm/notice 由 Agent 意图识别后分发
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, payload]
+              properties:
+                category: {type: string, enum: [task, link, alarm, notice]}
+                payload: {type: string, description: 文本或对象}
+      responses:
+        '200':
+          description: 输入处理结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+  /api/scene/ws:
+    get:
+      tags: [引擎接口]
+      summary: WebSocket 实时推送
+      description: |
+        连接后持续接收推送消息，格式：
+        - state: 状态快照
+        - toast: 顶部提示条
+        - modal_approval: 弹出审批模态框
+        - modal_refresh: 刷新模态框内容
+        - modal_close: 关闭模态框
+        - modal_notice: 告知型弹窗（ACT-01）
+        - event: 新事件
+      responses:
+        '200':
+          description: WebSocket 连接
+          content:
+            application/json:
+              schema: {type: object}
+
+  # ==================== 新增接口 ====================
+  /api/comm/forecast:
+    get:
+      tags: [新增接口]
+      summary: 前瞻预测逐分钟数据
+      description: 返回链路前瞻窗口内的预测占用阶梯点数组，供 SVG 折线图绘制
+      parameters:
+        - name: link_code
+          in: query
+          required: true
+          schema: {type: string, example: L-2H}
+        - name: as_of_min
+          in: query
+          schema: {type: integer}
+      responses:
+        '200':
+          description: 预测数据
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          link_code: {type: string}
+                          now: {type: integer}
+                          lookahead: {type: integer, example: 30}
+                          points:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                min: {type: integer}
+                                gbps: {type: number}
+                          warning_gbps: {type: number}
+                          capacity_gbps: {type: number}
+                          hit_min: {type: integer, nullable: true}
+                          hit_gbps: {type: number, nullable: true}
+                          outside_min: {type: integer, nullable: true}
+
+  /api/comm/precheck/task:
+    post:
+      tags: [新增接口]
+      summary: 添加任务容量预检
+      description: 填表时实时模拟计算是否会超限，不落库
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [link_code, demand_gbps]
+              properties:
+                link_code: {type: string, example: L-2H}
+                demand_gbps: {type: number, example: 5.00}
+      responses:
+        '200':
+          description: 预检结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          target_link_code: {type: string}
+                          current_after: {type: number}
+                          predicted_max_after: {type: number}
+                          will_exceed_capacity: {type: boolean}
+                          will_exceed_warning: {type: boolean}
+                          message: {type: string}
+
+  /api/comm/evidence/report:
+    get:
+      tags: [新增接口]
+      summary: T+120 全窗口证据核对报告
+      description: 场景结束后汇总事件连续性、归属历史、审批记录、方案终态、时间轴
+      responses:
+        '200':
+          description: 证据报告
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+
+components:
+  schemas:
+    BaseResponse:
+      type: object
+      properties:
+        code: {type: integer, example: 0}
+        message: {type: string, example: ok}
+        data: {type: object}

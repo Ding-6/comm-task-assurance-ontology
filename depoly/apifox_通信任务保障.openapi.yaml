@@ -1,0 +1,926 @@
+openapi: 3.1.0
+info:
+  title: 通信任务保障后端
+  description: |
+    Apifox 项目「通信任务保障后端」导入文件。
+    - baseUrl: http://localhost:8000
+    - 统一响应：{code: 0, message: "ok", data: ...}，code 非 0 为错误。
+    - V4.1 固定 1 倍速推演（60 真实秒 = 1 场景分钟），不提供 speed/倍速 接口。
+    - 路径严格对齐 backend/app/api/comm.py 与 api/scene.py 的实际 @router 装饰器。
+    - 导入后请在 Apifox 中开启「Mock 服务」即可获得全部接口的 mock 数据。
+  version: 1.1.0
+servers:
+  - url: http://localhost:8000
+    description: Local Dev
+
+# =====================================================================
+# Schemas
+# =====================================================================
+components:
+  schemas:
+
+    # ---------- 通用 ----------
+    ApiResponse:
+      type: object
+      properties:
+        code: { type: integer, example: 0, description: 0=成功，非 0=错误 }
+        message: { type: string, example: ok }
+        data: {}
+
+    # ---------- 链路 ----------
+    LinkOut:
+      type: object
+      properties:
+        link_code: { type: string }
+        link_name: { type: string }
+        capacity_gbps: { type: number, format: float }
+        warning_gbps: { type: number, format: float }
+        oper_state: { type: string, description: up/down }
+        avg_repair_min: { type: integer, nullable: true }
+        lookahead_min: { type: integer, nullable: true }
+        backup_link_code: { type: string, nullable: true }
+        current_load_gbps: { type: number, format: float, nullable: true }
+        future_load_gbps: { type: number, format: float, nullable: true }
+        warn_status: { type: string, nullable: true, description: 正常/超预警线/超容量 }
+
+    # ---------- 任务 ----------
+    TaskOut:
+      type: object
+      properties:
+        task_code: { type: string }
+        task_name: { type: string }
+        duration_min: { type: integer }
+        critical_min: { type: integer, nullable: true }
+        owner_role: { type: string, nullable: true }
+        current_link_code: { type: string, nullable: true }
+        initial_demand_gbps: { type: number, format: float }
+        lookahead_min: { type: integer, nullable: true }
+
+    # ---------- 告警 ----------
+    AlarmInjectIn:
+      type: object
+      required: [link_code, alarm_type, native_severity]
+      properties:
+        link_code: { type: string }
+        alarm_type: { type: string, description: "link_down / 性能劣化 / 容量超限" }
+        native_severity: { type: string, description: critical/major/minor/warning }
+        predicted_min: { type: integer, nullable: true }
+
+    AlarmOut:
+      type: object
+      properties:
+        alarm_code: { type: string }
+        link_code: { type: string }
+        alarm_type: { type: string }
+        native_severity: { type: string }
+        event_min: { type: integer }
+        predicted_min: { type: integer, nullable: true }
+
+    # ---------- 方案 ----------
+    PlanOut:
+      type: object
+      properties:
+        plan_code: { type: string }
+        alarm_code: { type: string }
+        plan_type: { type: string, description: repair/reroute }
+        link_code: { type: string }
+        target_link_code: { type: string, nullable: true }
+        est_repair_min: { type: integer, nullable: true }
+        predicted_load_after_gbps: { type: number, format: float, nullable: true }
+        can_meet_critical: { type: string, nullable: true, description: 是/否 }
+        status: { type: string, nullable: true, description: 待审批/批准/拒绝/已执行/已作废 }
+        is_default: { type: string, nullable: true, description: 是/否 }
+        recommendation: { type: string, nullable: true }
+        generated_min: { type: integer, nullable: true }
+
+    PlanGenerationResult:
+      type: object
+      description: |
+        方案生成结果（含上下文字段）。modal_approval ws 推送的 data 也是此结构。
+      properties:
+        alarm_code: { type: string }
+        link_code: { type: string }
+        predicted_min:
+          type: integer
+          nullable: true
+          description: 容量超限告警中记录的预测命中分钟
+        predicted_load: { type: number, format: float }
+        capacity: { type: number, format: float }
+        remain_min:
+          type: integer
+          nullable: true
+          description: predicted_min - now_min
+        fresh_message:
+          type: string
+          nullable: true
+          description: |
+            修理回执刷新时由 ACT-05 推 modal_refresh 覆盖；
+            初始 generate_plans 返回为 null。
+        plans:
+          type: array
+          items: { $ref: '#/components/schemas/PlanOut' }
+        deadline_min: { type: integer }
+        trigger_alarm_code: { type: string }
+
+    # ---------- 审批 ----------
+    ApprovalIn:
+      type: object
+      required: [plan_code, decision]
+      properties:
+        plan_code: { type: string }
+        decision: { type: string, description: 批准/拒绝 }
+        reason: { type: string, nullable: true }
+        approver: { type: string, nullable: true, default: ROLE-APPROVER }
+        decision_source: { type: string, nullable: true, description: 人工/超时自动 }
+
+    ApprovalOut:
+      type: object
+      properties:
+        approval_code: { type: string }
+        plan_code: { type: string, nullable: true }
+        decision: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        approver: { type: string, nullable: true }
+        decision_source: { type: string, nullable: true }
+        decided_min: { type: integer, nullable: true }
+
+    # ---------- 修理 ----------
+    RepairRequestIn:
+      type: object
+      required: [alarm_code]
+      properties:
+        alarm_code: { type: string }
+        plan_code: { type: string, nullable: true }
+
+    RepairReceiveIn:
+      type: object
+      required: [order_code, est_finish_min]
+      properties:
+        order_code: { type: string }
+        est_finish_min:
+          type: integer
+          description: 相对当前场景分钟的预计完成时长（分钟）。接口层转换为绝对场景分钟。
+        actual_finish_min:
+          type: integer
+          nullable: true
+          description: 相对基准分钟的实际完成时长（分钟）。接口层转换为绝对场景分钟。语义同 est_finish_min。
+        as_of_min:
+          type: integer
+          nullable: true
+          description: 相对时长的基准场景分钟；缺省为当前场景分钟。
+
+    RepairOrderOut:
+      type: object
+      properties:
+        order_code: { type: string }
+        link_code: { type: string }
+        alarm_code: { type: string, nullable: true }
+        request_min: { type: integer }
+        est_finish_min: { type: integer, nullable: true }
+        actual_finish_min: { type: integer, nullable: true }
+        status: { type: string, nullable: true, description: 已申请/已回执/修复中/已完成 }
+
+    # ---------- 输入 ----------
+    ForecastPoint:
+      type: object
+      properties:
+        min: { type: integer, description: 阶梯点的场景绝对分钟 }
+        gbps: { type: number, format: float, description: 该分钟 predicted_load(Gbps) }
+
+    ForecastData:
+      type: object
+      properties:
+        link_code: { type: string }
+        now: { type: integer, description: 当前场景分钟 }
+        lookahead: { type: integer, description: 前瞻窗口长度（分钟） }
+        warning_gbps: { type: number, format: float }
+        capacity_gbps: { type: number, format: float }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/ForecastPoint' }
+          description: 阶梯点（只在值变化时入列；前端自己画阶梯线）
+        hit_min:
+          type: integer
+          nullable: true
+          description: 窗口内首个 predicted > capacity 的分钟；null=无超限
+        hit_gbps:
+          type: number
+          format: float
+          nullable: true
+          description: 命中时的 predicted_load(Gbps)
+        outside_min:
+          type: integer
+          nullable: true
+          description: 窗口外但未来会超限的分钟；null=无/无数据；用于前端画"暂不判超限"灰点
+
+    EvidenceData:
+      type: object
+      properties:
+        event_continuity:
+          type: object
+          properties:
+            total: { type: integer }
+            has_gap: { type: boolean }
+            gap_at_min: { type: array, items: { type: integer } }
+            result: { type: string, description: 连续/有断点 }
+        task_history:
+          type: array
+          items:
+            type: object
+            properties:
+              task_code: { type: string }
+              history:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    assigned_min: { type: integer }
+                    link_code: { type: string }
+                    note: { type: string }
+        approval_records:
+          type: array
+          items:
+            type: object
+            properties:
+              approval_code: { type: string }
+              plan_code: { type: string, nullable: true }
+              decision: { type: string, nullable: true }
+              approver: { type: string, nullable: true }
+              decision_source: { type: string, nullable: true }
+              decided_min: { type: integer, nullable: true }
+              reason: { type: string, nullable: true }
+        final_states:
+          type: object
+          properties:
+            plans:
+              type: array
+              items:
+                type: object
+                properties:
+                  plan_code: { type: string }
+                  alarm_code: { type: string }
+                  plan_type: { type: string }
+                  link_code: { type: string }
+                  target_link_code: { type: string, nullable: true }
+                  status: { type: string }
+                  is_default: { type: string, nullable: true }
+                  can_meet_critical: { type: string, nullable: true }
+                  generated_min: { type: integer, nullable: true }
+            repair_orders:
+              type: array
+              items:
+                type: object
+                properties:
+                  order_code: { type: string }
+                  link_code: { type: string }
+                  alarm_code: { type: string, nullable: true }
+                  request_min: { type: integer, nullable: true }
+                  est_finish_min: { type: integer, nullable: true }
+                  actual_finish_min: { type: integer, nullable: true }
+                  status: { type: string, nullable: true }
+            alarms:
+              type: array
+              items:
+                type: object
+                properties:
+                  alarm_code: { type: string }
+                  link_code: { type: string }
+                  alarm_type: { type: string }
+                  native_severity: { type: string }
+                  event_min: { type: integer, nullable: true }
+                  predicted_min: { type: integer, nullable: true }
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              occur_min: { type: integer }
+              event_type: { type: string }
+              summary: { type: string }
+              is_manual_node:
+                type: boolean
+                description: event_type in {plan_generated, approval_decided}
+
+    PrecheckData:
+      type: object
+      properties:
+        target_link_code: { type: string }
+        current_after: { type: number, format: float, description: 加完需求后的当前占用 Gbps }
+        current_before: { type: number, format: float, description: 加需求前 Gbps }
+        predicted_max_after: { type: number, format: float, description: 窗口内最大预测 Gbps }
+        capacity_gbps: { type: number, format: float }
+        warning_gbps: { type: number, format: float }
+        lookahead: { type: integer }
+        will_exceed_warning: { type: boolean, description: current_after > warning }
+        will_exceed_capacity: { type: boolean, description: predicted_max_after > capacity }
+        message: { type: string, description: 给前端的提示文案 }
+
+    InputIn:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+
+    # ---------- 引擎 ----------
+    SceneStateData:
+      type: object
+      properties:
+        running: { type: boolean }
+        is_paused: { type: boolean }
+        now_min: { type: integer }
+        wallclock:
+          type: string
+          nullable: true
+          description: |
+            真实墙钟字符串（HH:MM:SS）。= start_wallclock + now_min 分钟
+            （按 1:1 实时推演）。用于右上角"已运行 XX:XX:XX"展示。
+        tick_seconds: { type: number, format: float, description: "V4.1 固定 60 真实秒 = 1 场景分钟" }
+        links:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/LinkOut'
+              - type: object
+                properties:
+                  is_backup:
+                    type: boolean
+                    description: 是否为其它链路的备用（comm_link.backup_link_code == 本链路）
+                  active_repair_order:
+                    nullable: true
+                    type: object
+                    description: 该链路上 status != 已完成 的最新修理单；null=无
+                    properties:
+                      order_code: { type: string }
+                      status: { type: string }
+        tasks:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/TaskOut'
+              - type: object
+                properties:
+                  current_demand_gbps:
+                    type: number
+                    format: float
+                    description: 该任务当前（now_min 时刻）生效的 demand_gbps 总和
+                  last_note:
+                    type: string
+                    nullable: true
+                    description: |
+                      该任务最新一条 TaskLinkBinding 的 note 字段。
+                      前端可据此判断是否显示"已迁入"橙边标签（如包含「切换而来」/「回迁」）。
+        task_carrier:
+          type: object
+          additionalProperties: { type: string }
+          description: task_code → 当前承载链路
+        pending_approvals: { type: array, items: { $ref: '#/components/schemas/PlanOut' } }
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              event_code: { type: string }
+              event_type: { type: string }
+              ref_type: { type: string, nullable: true }
+              ref_code: { type: string, nullable: true }
+              occur_min: { type: integer }
+              summary: { type: string, nullable: true }
+        booked_events:
+          type: array
+          description: |
+            预订事件队列：event_type=task_booked 且 occur_min > now_min
+            且未兑现（event_type 还未被 tick 改为 state_changed）。
+          items:
+            type: object
+            properties:
+              occur_min: { type: integer }
+              summary: { type: string }
+              remain_min: { type: integer, description: "occur_min - now_min（还差多少分钟兑现）" }
+
+    SceneStartIn:
+      type: object
+      properties:
+        offset_min:
+          type: integer
+          default: 0
+          minimum: 0
+          description: 已废弃，V4.1 不支持；保留字段仅为兼容老客户端
+      description: 启动场景入参（无字段也合法）。服务忽略所有字段，以真实墙钟为锚点 1:1 推演。
+
+    SceneDecideIn:
+      type: object
+      required: [decision]
+      properties:
+        plan_code: { type: string, description: 优先使用，SK-04 规范 }
+        approval_code: { type: string, description: 旧路径，兼容 }
+        decision: { type: string, description: 批准/拒绝 }
+        reason: { type: string, nullable: true }
+
+    SceneInputIn:
+      type: object
+      required: [category, payload]
+      properties:
+        category: { type: string, description: "task/link/alarm/notice" }
+        payload: { description: 字符串或对象，按 category 分发 }
+
+    InputSuggestion:
+      type: object
+      description: 输入框识别失败时给前端的可点选建议
+      properties:
+        sub_type: { type: string, description: "link_down / performance_degrade / demand_change / link_restored / repair_receipt" }
+        label: { type: string, description: 中文标签（按钮文案） }
+        example: { type: string, description: 该类输入的典型中文示例 }
+
+    SceneInputFailData:
+      type: object
+      description: |
+        识别失败时的 data 结构。前端收到 code=0 但 data.category=null
+        （或本字段顶层 category=null）时展示 suggestions 让用户点选，
+        不直接执行。
+      properties:
+        category:
+          { type: string, nullable: true, description: 始终为 null }
+        sub_type:
+          { type: string, nullable: true, description: 始终为 null }
+        message:
+          { type: string, description: "提示语，例如：无法识别：缺少线路编号或任务名。系统不会猜测，也不会执行。" }
+        suggestions:
+          type: array
+          items: { $ref: '#/components/schemas/InputSuggestion' }
+        raw: { type: string, description: 原输入文本 }
+
+# =====================================================================
+# Paths（严格对齐后端 router）
+# =====================================================================
+paths:
+
+  # ---------- 业务接口 ----------
+  /comm/forecast:
+    get:
+      tags: [业务接口]
+      summary: 前瞻预测：阶梯式 predicted_load 采样
+      description: |
+        链路在 [now, now+lookahead] 内逐个需求 valid_from_min 变更点采样 predicted_load，
+        返回**阶梯点**（只在值变化时入列）。前端拿到 points 后自己连成阶梯线。
+
+        - hit_min：窗口内首个 predicted > capacity 的分钟
+        - outside_min：窗口外但会超限的最早分钟（无则 null）
+      parameters:
+        - in: query
+          name: link_code
+          required: true
+          schema: { type: string }
+        - in: query
+          name: as_of_min
+          required: false
+          schema: { type: integer, description: 模拟当前场景分钟（缺省=now_min()） }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ForecastData' }
+
+  /comm/evidence/report:
+    get:
+      tags: [业务接口]
+      summary: T+120 全窗口证据核对报告（画板07）
+      description: |
+        场景结束后一次性汇总所有证据，用于画板07证据核对展示：
+        - 事件连续性
+        - 任务归属历史
+        - 审批记录
+        - 方案/修理单/告警最终态
+        - 时间轴（含人工介入节点标记）
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/EvidenceData' }
+
+  /comm/precheck/task:
+    post:
+      tags: [业务接口]
+      summary: 添加任务容量预检（不落库）
+      description: |
+        模拟"在 link_code 链路上新增 demand=demand_gbps 的需求"后的占用与预警状态，
+        供前端表单实时提示用。**不写数据库**。
+
+        入参采用 requestBody（JSON），与前端表单语义一致。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [link_code, demand_gbps]
+              properties:
+                link_code: { type: string }
+                demand_gbps: { type: number, format: float, minimum: 0 }
+                as_of_min:
+                  type: integer
+                  nullable: true
+                  description: 模拟当前场景分钟（缺省=now_min()）
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PrecheckData' }
+
+  /comm/links:
+    get:
+      tags: [业务接口]
+      summary: 列出全部链路（自动回算 current/future/warn_status）
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/LinkOut' }
+
+  /comm/tasks:
+    get:
+      tags: [业务接口]
+      summary: 列出全部任务
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/TaskOut' }
+
+  /comm/alarms/inject:
+    post:
+      tags: [业务接口]
+      summary: SK-01 注入告警
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlarmInjectIn' }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/AlarmOut' }
+
+  /comm/switch/{link_code}:
+    post:
+      tags: [业务接口]
+      summary: SK-02 ACT-01 故障自动切换
+      parameters:
+        - in: path
+          name: link_code
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          switched_tasks: { type: array, items: { type: string } }
+                          repair_order_code: { type: string }
+                          from_link: { type: string }
+                          to_link: { type: string, nullable: true }
+
+  /comm/plans/generate/{alarm_code}:
+    post:
+      tags: [业务接口]
+      summary: SK-03 ACT-03 为告警生成方案
+      description: |
+        返回 `PlanGenerationResult`：含上下文字段 + 方案数组；
+        同步通过 ws 推 `modal_approval` 消息。
+      parameters:
+        - in: path
+          name: alarm_code
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/PlanGenerationResult' }
+
+  /comm/approvals/decide:
+    post:
+      tags: [业务接口]
+      summary: SK-04 人工决策
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalIn' }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ApprovalOut' }
+
+  /comm/repairs/request:
+    post:
+      tags: [业务接口]
+      summary: SK-05 申请修理单
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RepairRequestIn' }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/RepairOrderOut' }
+
+  /comm/repairs/receive:
+    post:
+      tags: [业务接口]
+      summary: SK-06 修理回执登记
+      description: |
+        收到回执后：
+        - 回写 `comm_repair_order.est_finish_min` / `status='已回执'`
+        - 评估该链路上同 alarm 的待审批 repair 方案，更新 `can_meet_critical`，超期置 `已作废`
+        - 同步通过 ws 推 `modal_refresh` 消息（含 `fresh_message` 提示 + 完整 plans）；倒计时不重置
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RepairReceiveIn' }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/RepairOrderOut' }
+
+  /comm/links/{link_code}/restore:
+    post:
+      tags: [业务接口]
+      summary: SK-07 ACT-06 链路恢复与任务回迁
+      parameters:
+        - in: path
+          name: link_code
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          link_code: { type: string }
+                          restored_tasks: { type: array, items: { type: string } }
+                          skipped_tasks: { type: array, items: { type: object } }
+                          released_links: { type: array, items: { type: string } }
+                          released_link_code: { type: string, nullable: true }
+
+  /comm/input:
+    post:
+      tags: [业务接口]
+      summary: SK-10 自然语言输入
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InputIn' }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: {}
+
+  # ---------- 引擎接口 ----------
+  /scene/state:
+    get:
+      tags: [引擎接口]
+      summary: 场景引擎当前状态
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SceneStateData' }
+
+  /scene/start:
+    post:
+      tags: [引擎接口]
+      summary: 启动场景（记录真实时刻为锚点，1:1 实时推演）
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SceneStartIn' }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SceneStateData' }
+
+  /scene/pause:
+    post:
+      tags: [引擎接口]
+      summary: 暂停引擎 tick 扫描（不挂起业务时钟，不影响 60s 倒计时）
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /scene/resume:
+    post:
+      tags: [引擎接口]
+      summary: 恢复引擎 tick 扫描
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /scene/reset:
+    post:
+      tags: [引擎接口]
+      summary: |
+        复位：停止循环 + 清空时钟锚点 + 清空业务数据 → 恢复为默认三任务三链路+两条预订事件
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/SceneStateData' }
+
+  /scene/decide:
+    post:
+      tags: [引擎接口]
+      summary: 引擎级决策（与 /comm/approvals/decide 同 schema；用 plan_code 或 approval_code）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SceneDecideIn' }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          approval_code: { type: string }
+                          decision: { type: string }
+
+  /scene/input:
+    post:
+      tags: [引擎接口]
+      summary: 输入框统一入口；category=task/link 直接转调 SK-08/SK-09；alarm/notice 由 Agent 意图识别后分发
+      description: |
+        成功识别 → data 为 `SceneInputIn` 解析后的对象
+        （含 category/sub_type/link_code/task_code/action/params 等）。
+
+        **识别失败** → data 为 `SceneInputFailData`：category=null、
+        sub_type=null、message 提示、suggestions 5 条可点选建议
+        （line_down / performance_degrade / demand_change / link_restored / repair_receipt）。
+        前端展示 suggestions 让用户点选，不直接执行。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SceneInputIn' }
+      responses:
+        '200':
+          description: |
+            ok。data 形态见 description：
+            - 成功 → SceneInputIn 解析对象
+            - 失败 → SceneInputFailData（category=null）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        oneOf:
+                          - $ref: '#/components/schemas/SceneInputFailData'
+
+  /scene/ws:
+    get:
+      tags: [引擎接口]
+      summary: 场景事件 WebSocket
+      description: |
+        推送消息格式：`{type: "state|alert|modal|modal_refresh|modal_notice|toast|event", data: {...}}`
+
+        新连接时立即推一次 `{type: "state", data: <完整状态>}`。
+      responses:
+        '101':
+          description: Switching Protocols (WebSocket upgrade)
+
+tags:
+  - name: 业务接口
+    description: 链路/任务/告警/方案/审批/修理/回迁/输入
+  - name: 引擎接口
+    description: 场景状态/控制/输入/WebSocket
